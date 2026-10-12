@@ -1,14 +1,17 @@
-# IrisIDE
+# Iris IDE
 
 **A calm, visual coding IDE for Python with Claude built in. Your project is a living tree of which files call which, not a wall of files.**
 
 ---
 
-## Why Trellis exists
+## Why Iris exists
+
+*Named after the iris of the eye: the part that controls how much light gets in. Iris lets in only what you need to see right now, and the 👁 focus eye is at the center of it.*
+
 
 Most IDEs show you everything at once: every file, every panel, every log line. That's great for some people and overwhelming for others.
 
-Trellis is built around two ideas:
+Iris is built around two ideas:
 
 1. **See the project, don't read it.** The main screen is a branching map of how your code connects. The editor only opens when you click into something.
 2. **Steer Claude one idea at a time.** Every change Claude proposes arrives as its own card you can keep, reject, or park, so you never have to accept a bundle of changes you only half wanted.
@@ -36,13 +39,13 @@ This isn't trying to replace VS Code. It's a personal tool shaped around how pro
 - A branch you expected to light up but didn't is your bug, found visually.
 
 ### 👁 Invisible debugging and the focus eye
-- No logging code in your project files. Trellis runs your code through a built-in tracer (Python's `sys.monitoring`, 3.12+) that records every call, return value, and error from the outside.
+- No logging code in your project files. Iris runs your code through a built-in tracer (Python's `sys.monitoring`, 3.12+) that records every call, return value, and error from the outside.
 - When something fails:
   - the **failing function turns red**
   - the **calling function turns orange**
   - the branch between them is highlighted
 - Click the **👁 focus eye** to isolate just those two functions side by side, with the error message and the actual values that were passed in when it broke.
-- Claude reads the trace Trellis already collected, so it never needs to add debug lines either.
+- Claude reads the trace Iris already collected, so it never needs to add debug lines either.
 
 ### ⏪ Clean versions, no `_v2` clutter
 - The tree always shows clean file names (`config_github.py`, not `test_config_github_v4.py`).
@@ -56,7 +59,7 @@ This isn't trying to replace VS Code. It's a personal tool shaped around how pro
 - For each card: **Keep**, **Reject**, or **Park** for later.
 - Rejecting a card makes Claude ask a short follow-up question about what you actually meant, so the next attempt lands closer.
 - **Drag and drop:** drag cards to decide on them, and drag a function from the editor into the chat to say "this part" without copy-pasting.
-- **Labels on every card**, mostly computed by Trellis itself at no extra Claude cost:
+- **Labels on every card**, mostly computed by Iris itself at no extra Claude cost:
   - files and functions touched
   - lines added or removed
   - new file vs. edit
@@ -163,7 +166,7 @@ Built in phases so there's something usable early and each phase can be vibecode
 - [ ] Keyboard shortcuts for the most common actions
 - [ ] Light and dark themes
 - [ ] Settings page (entry point, Python path, API key)
-- [ ] Use Trellis to build Trellis 🙂
+- [ ] Use Iris to build Iris 🙂
 
 ---
 
