@@ -1,0 +1,67 @@
+# ==========================================
+# Iris .gitignore
+# Tauri + React + TypeScript + Python tracer
+# ==========================================
+
+# ---------- Secrets (never commit) ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+
+# ---------- Node / frontend ----------
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---------- Tauri / Rust ----------
+src-tauri/target/
+src-tauri/gen/schemas/
+target/
+**/*.rs.bk
+
+# ---------- Python (tracer + test projects) ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Trellis runtime data ----------
+# Hidden snapshot history and trace files Trellis creates
+# inside projects it opens (including its own repo when
+# you use Trellis to build Trellis)
+.trellis/
+*.trace
+*.trace.json
+traces/
+
+# ---------- Logs ----------
+logs/
+*.log
+
+# ---------- Editors / OS ----------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
