@@ -43,11 +43,11 @@ env/
 .coverage
 htmlcov/
 
-# ---------- Trellis runtime data ----------
-# Hidden snapshot history and trace files Trellis creates
+# ---------- Iris runtime data ----------
+# Hidden snapshot history and trace files Iris creates
 # inside projects it opens (including its own repo when
-# you use Trellis to build Trellis)
-.trellis/
+# you use Iris to build Iris)
+.iris/
 *.trace
 *.trace.json
 traces/
