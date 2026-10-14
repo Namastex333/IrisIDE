@@ -199,7 +199,14 @@ class Analysis {
             const kind = isClass ? 'class' : classBody ? 'method' : 'function'
             def = { id: `def:${file.path}::${qualname}`, kind, name, qualname, file: file.path, line: child.startPosition.row + 1, node: child }
             file.defs.set(qualname, def)
-            this.nodes.set(def.id, { id: def.id, kind, label: defLabel(def), file: file.path, line: def.line })
+            this.nodes.set(def.id, {
+              id: def.id,
+              kind,
+              label: defLabel(def),
+              file: file.path,
+              line: def.line,
+              endLine: child.endPosition.row + 1
+            })
             if (kind === 'method') {
               const sameName = this.methodsByName.get(name)
               if (sameName) sameName.push(def)

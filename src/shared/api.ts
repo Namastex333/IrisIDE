@@ -40,6 +40,8 @@ export interface GraphNode {
   file: string | null
   /** 1-based line of the definition inside `file`, if there is one. */
   line: number | null
+  /** Last line of the definition, for showing just that function. */
+  endLine?: number | null
 }
 
 export interface GraphEdge {
@@ -98,9 +100,35 @@ export type TraceFact =
       order: number
     }
 
+/** An error the project's own code did not catch. Values are short descriptions written by the tracer. */
+export interface TraceFailure {
+  /** The exception's number within the run. */
+  id: number
+  type: string
+  message: string
+  /** The project function where it was raised (a lambda or comprehension counts as the function around it). */
+  fn: string
+  line: number
+  /** When it started inside a library that function called, where: "decoder.py:raw_decode". */
+  origin: string | null
+  /** The function's parameters, and its other local variables, at the moment it failed. */
+  args: Record<string, string>
+  locals: Record<string, string>
+  /** The function that called it, the line of that call, and the caller's variables at that moment. */
+  caller: { fn: string; line: number | null; locals: Record<string, string> } | null
+  /** Every project function the error passed through, from where it was raised outwards. */
+  path: string[]
+  /** True for the error that ended the run. */
+  fatal: boolean
+  /** Position in the run, comparable with TraceFact.order. */
+  order: number
+}
+
 export type TraceUpdate =
   /** Whether this run can be traced at all, and why not. */
   | { type: 'info'; traced: boolean; note: string | null }
+  /** Errors no project code caught, and how many errors project code did catch. */
+  | { type: 'failures'; failures: TraceFailure[]; caught: number }
   /** Things that happened for the first time. `wrappers` are decorators' wrapper functions; `hot` stopped being counted. */
   | { type: 'facts'; facts: TraceFact[]; wrappers: string[]; hot: string[] }
   /** Times branches have run so far: [from, to, times, created]. */

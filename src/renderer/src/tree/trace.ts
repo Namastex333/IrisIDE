@@ -1,6 +1,6 @@
 // Turns a run's trace into what the tree shows: which branches ran, in what order and how often,
 // and which branches only showed up when the code ran. No React, no DOM.
-import type { GraphEdge, GraphNode, ProjectGraph, TraceFact, TraceUpdate } from '../../../shared/api'
+import type { GraphEdge, GraphNode, ProjectGraph, TraceFact, TraceFailure, TraceUpdate } from '../../../shared/api'
 
 export interface RunTrace {
   /** Different for every run, so the view can restart its animation. */
@@ -19,6 +19,10 @@ export interface RunTrace {
   exitCode: number | null
   stopped: boolean
   error: { type: string; message: string } | null
+  /** Errors the project's own code did not catch. */
+  failures: TraceFailure[]
+  /** How many errors the project's own code caught along the way. */
+  caught: number
 }
 
 let traces = 0
@@ -35,7 +39,9 @@ export function newTrace(): RunTrace {
     counts: new Map(),
     exitCode: null,
     stopped: false,
-    error: null
+    error: null,
+    failures: [],
+    caught: 0
   }
 }
 
@@ -46,6 +52,8 @@ export function applyTraceUpdate(trace: RunTrace, update: TraceUpdate): RunTrace
   switch (update.type) {
     case 'info':
       return { ...trace, traced: update.traced, note: update.note }
+    case 'failures':
+      return { ...trace, failures: update.failures, caught: update.caught }
     case 'facts':
       return {
         ...trace,
@@ -77,6 +85,19 @@ export interface RunView {
   /** Branches and resources that only showed up when the code ran. */
   extraEdges: GraphEdge[]
   extraNodes: GraphNode[]
+  /** The error to flag: the one that ended the run, or else the first one nothing caught. */
+  failure: ResolvedFailure | null
+}
+
+export interface ResolvedFailure {
+  error: TraceFailure
+  /** The node where it failed (turns red) and the node that called it (turns orange), when the tree has them. */
+  failing: string | null
+  caller: string | null
+  /** The branch between them. */
+  edge: string | null
+  /** Every node the error passed through, from where it failed outwards. */
+  path: string[]
 }
 
 const NESTED_CODE = /^<(lambda|genexpr|listcomp|setcomp|dictcomp)>$/
@@ -248,7 +269,43 @@ export function resolveTrace(graph: ProjectGraph, trace: RunTrace): RunView {
     if (id) busy.add(id)
   }
 
-  return { ran, indirect, nodeOrder, calls, busy, extraEdges: [...extraEdges.values()], extraNodes: [...extraNodes.values()] }
+  let failure: ResolvedFailure | null = null
+  const error = trace.failures.find((candidate) => candidate.fatal) ?? [...trace.failures].sort((a, b) => a.order - b.order)[0]
+  if (error) {
+    const failing = nodeIdFor(error.fn, nodes)
+    const caller = error.caller ? nodeIdFor(error.caller.fn, nodes) : null
+    let edge: string | null = null
+    if (failing && caller && failing !== caller) {
+      const callerFile = nodes.get(caller)?.file
+      const viaImport = `mod:${callerFile}->${failing}:import`
+      if (nodes.get(failing)?.kind === 'module' && edges.has(viaImport)) {
+        edge = viaImport // it failed while being imported
+      } else {
+        edge = `${caller}->${failing}:call`
+        if (!edges.has(edge) && !extraEdges.has(edge)) {
+          extraEdges.set(edge, { id: edge, source: caller, target: failing, kind: 'call', inferred: false, line: error.caller?.line ?? 0, observed: true })
+        }
+        earliest(ran, edge, error.order)
+      }
+    }
+    const path: string[] = []
+    for (const key of error.path) {
+      const id = nodeIdFor(key, nodes)
+      if (id && path[path.length - 1] !== id) path.push(id)
+    }
+    failure = { error, failing, caller, edge, path }
+  }
+
+  return {
+    ran,
+    indirect,
+    nodeOrder,
+    calls,
+    busy,
+    extraEdges: [...extraEdges.values()],
+    extraNodes: [...extraNodes.values()],
+    failure
+  }
 }
 
 /** How much of the entry point's tree the run covered, counting every branch reachable from it. */

@@ -32,6 +32,9 @@ export const EDGE_COLORS: Record<Theme, Record<GraphEdgeKind, string>> = {
 /** Run view: branches that did not run (or have not yet). */
 export const IDLE_EDGE_COLORS: Record<Theme, string> = { dark: '#4a4a5c', light: '#c8c8d4' }
 
+/** The branch between a failing function and the function that called it. */
+export const ERROR_EDGE_COLORS: Record<Theme, string> = { dark: '#f87171', light: '#dc2626' }
+
 export const TERMINAL_THEMES: Record<Theme, ITheme> = {
   dark: { background: '#101016', foreground: '#d4d4e0', cursor: '#7dd3fc', selectionBackground: '#3a3a55' },
   light: {

@@ -2,13 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 import { DEFAULT_SETTINGS, type AppSettings, type FileNode, type ProjectGraph, type ProjectInfo } from '../../shared/api'
 import { EditorPane, type EditorHandle } from './components/EditorPane'
 import { FileList } from './components/FileList'
+import { FocusView } from './components/FocusView'
+import { EyeIcon } from './components/icons'
 import { RunPane } from './components/RunPane'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TerminalPane } from './components/TerminalPane'
 import { TopBar } from './components/TopBar'
 import { TreeView } from './components/TreeView'
 import { useTheme } from './theme'
-import { applyTraceUpdate, newTrace, type RunTrace } from './tree/trace'
+import { applyTraceUpdate, newTrace, resolveTrace, type RunTrace } from './tree/trace'
 
 interface OpenFile {
   path: string
@@ -42,6 +44,8 @@ export function App() {
   const [running, setRunning] = useState(false)
   /** What the last run did, for the tree's run view. */
   const [trace, setTrace] = useState<RunTrace | null>(null)
+  /** The 👁 focus view on the error the last run flagged. */
+  const [focusOpen, setFocusOpen] = useState(false)
   const [bottomTab, setBottomTab] = useState<BottomTab>('terminal')
   const [bottomHeight, setBottomHeight] = useState(240)
   const [error, setError] = useState<string | null>(null)
@@ -158,6 +162,19 @@ export function App() {
 
   // A run belongs to one project and entry point.
   useEffect(() => setTrace(null), [projectRoot, entryPoint])
+
+  // What the run means for the tree. A run that could not be traced has nothing to show there.
+  const runView = useMemo(
+    () => (graph && trace && (trace.traced === true || (trace.traced === null && trace.status === 'running')) ? resolveTrace(graph, trace) : null),
+    [graph, trace]
+  )
+  const runNodes = useMemo(
+    () => new Map([...(graph?.nodes ?? []), ...(runView?.extraNodes ?? [])].map((node) => [node.id, node])),
+    [graph, runView]
+  )
+  const failure = runView?.failure ?? null
+  useEffect(() => setFocusOpen(false), [trace?.id])
+  const focusError = useCallback(() => setFocusOpen(true), [])
 
   const confirmDiscard = (): boolean =>
     !dirty || !openFile || window.confirm(`Discard unsaved changes to ${openFile.path}?`)
@@ -309,8 +326,10 @@ export function App() {
                 showInferred={settings.showInferredLinks}
                 theme={theme}
                 trace={trace}
+                runView={runView}
                 onOpen={openPath}
                 onClearTrace={() => setTrace(null)}
+                onFocusError={focusError}
               />
             ) : (
               <div className="home">
@@ -326,6 +345,20 @@ export function App() {
               </div>
             )}
 
+            {focusOpen && failure && (
+              <FocusView
+                failure={failure}
+                nodes={runNodes}
+                theme={theme}
+                fontSize={settings.editorFontSize}
+                onOpen={(file, line) => {
+                  setFocusOpen(false)
+                  void openPath(file, line)
+                }}
+                onClose={() => setFocusOpen(false)}
+              />
+            )}
+
             {openFile && (
               <div className="editor-layer">
                 <div className="tab-bar">
@@ -337,6 +370,15 @@ export function App() {
                     {dirty && <span className="dirty-dot" title="Unsaved changes (Ctrl+S to save)" />}
                   </span>
                   <span className="spacer" />
+                  {failure && (
+                    <button
+                      className="focus-button"
+                      title={`The last run failed with ${failure.error.type}. Look at where, side by side with its caller`}
+                      onClick={focusError}
+                    >
+                      <EyeIcon /> Focus on the error
+                    </button>
+                  )}
                   <button className="icon-button" title="Close file" onClick={closeFile}>
                     ✕
                   </button>

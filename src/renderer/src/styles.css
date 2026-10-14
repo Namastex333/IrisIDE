@@ -301,6 +301,7 @@ button.stop {
 }
 
 .tree-node {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -458,6 +459,54 @@ button.stop {
   color: var(--green);
 }
 
+/* Errors: the function that failed turns red, the function that called it orange. */
+.tree-node.flag-failing {
+  --kind-color: var(--red);
+  border-color: var(--red);
+  border-left-color: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 28%, transparent);
+}
+
+.tree-node.flag-calling {
+  --kind-color: var(--orange);
+  border-color: var(--orange);
+  border-left-color: var(--orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 24%, transparent);
+}
+
+.tree-eye {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--red);
+  color: white;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.flag-calling .tree-eye {
+  background: var(--orange);
+}
+
+.tree-eye:hover:not(:disabled) {
+  border-color: var(--text);
+}
+
+.tree-toggle.has-error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.tree-flow .react-flow__edge.error-branch .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--red) 70%, transparent));
+}
+
 /* Focus mode wins over the run view. */
 .tree-flow .react-flow__node.faded {
   opacity: 0.2;
@@ -541,6 +590,225 @@ button.stop {
 @keyframes run-pulse {
   to {
     opacity: 0.3;
+  }
+}
+
+.focus-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: var(--red-border);
+  color: var(--red);
+}
+
+.tab-bar .focus-button {
+  padding: 2px 10px;
+  margin-right: 6px;
+}
+
+/* ---------- Focus view ---------- */
+
+/* Above the editor too: it can be opened from there, and closing it goes back to what was open. */
+.focus-view {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.focus-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.focus-icon {
+  display: grid;
+  color: var(--red);
+}
+
+.focus-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.focus-error {
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.focus-path {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus-badge {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.focus-panes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.focus-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel-deep);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.focus-pane.failing {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+}
+
+.focus-pane.calling {
+  border-color: color-mix(in srgb, var(--orange) 55%, var(--border));
+}
+
+.focus-pane > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.focus-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.focus-chip.failing {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.focus-chip.calling {
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+}
+
+.focus-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.link-button {
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--accent);
+}
+
+.link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.focus-note,
+.focus-problem {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.focus-code {
+  flex: 0 1 auto;
+  min-height: 60px;
+  max-height: 65%;
+}
+
+.focus-line-failing {
+  background: color-mix(in srgb, var(--red) 22%, transparent);
+}
+
+.focus-line-calling {
+  background: color-mix(in srgb, var(--orange) 20%, transparent);
+}
+
+.focus-bar-failing,
+.focus-bar-calling {
+  width: 3px !important;
+  margin-left: 3px;
+  background: var(--red);
+}
+
+.focus-bar-calling {
+  background: var(--orange);
+}
+
+.focus-values {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 12px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.focus-values > p {
+  margin: 6px 0;
+}
+
+.focus-section h4 {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.focus-section dl {
+  margin: 0;
+}
+
+.focus-value {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.focus-value dt {
+  flex-shrink: 0;
+  min-width: 90px;
+  color: var(--accent);
+}
+
+.focus-value dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .focus-panes {
+    flex-direction: column;
   }
 }
 

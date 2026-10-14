@@ -2,7 +2,7 @@
 // and turns new lines into updates for the tree, while the program is still running.
 import { open } from 'fs/promises'
 import { StringDecoder } from 'string_decoder'
-import type { TraceFact, TraceUpdate } from '../../shared/api'
+import type { TraceFact, TraceFailure, TraceUpdate } from '../../shared/api'
 import { isConfigFile } from './analyzer/resources'
 
 const POLL_MS = 100
@@ -22,7 +22,21 @@ interface TraceLine {
   access?: 'read' | 'write'
   counts?: [string | null, string, number, string | null][]
   exit?: number | null
-  error?: { type: string; msg: string }
+  error?: { type: string; msg: string; x?: number }
+  x?: number
+  line?: number
+  type?: string
+  msg?: string
+  origin?: string
+  args?: Record<string, string>
+  locals?: Record<string, string>
+  caller_locals?: Record<string, string>
+}
+
+interface ExceptionRecord {
+  failure: TraceFailure
+  /** Undefined while its fate is unknown; null when caught outside the project's code; else the function that caught it. */
+  caughtBy: string | null | undefined
 }
 
 export class TraceTail {
@@ -30,6 +44,7 @@ export class TraceTail {
   private rest = ''
   private readonly decoder = new StringDecoder('utf8')
   private readonly seen = new Set<string>()
+  private readonly exceptions = new Map<number, ExceptionRecord>()
   private order = 0
   private timer: NodeJS.Timeout | null = null
   private reading: Promise<unknown> | null = null
@@ -91,6 +106,7 @@ export class TraceTail {
     const hot: string[] = []
     let counts: [string | null, string, number, string | null][] = []
     let end: TraceLine | null = null
+    let exceptionsChanged = false
 
     for (const line of lines) {
       if (!line.trim()) continue
@@ -122,15 +138,34 @@ export class TraceTail {
         case 'counts':
           counts = counts.concat(event.counts ?? [])
           break
-        case 'end':
+        case 'raise':
+        case 'unwind':
+        case 'handled':
+          exceptionsChanged = this.exception(event) || exceptionsChanged
+          break
+        case 'end': {
           counts = counts.concat(event.counts ?? [])
           end = event
+          const fatal = event.error?.x === undefined ? undefined : this.exceptions.get(event.error.x)
+          if (fatal) {
+            fatal.failure.fatal = true
+            exceptionsChanged = true
+          }
           break
+        }
       }
     }
 
     if (facts.length || wrappers.length || hot.length) this.send({ type: 'facts', facts, wrappers, hot })
     if (counts.length) this.send({ type: 'counts', counts })
+    if (exceptionsChanged) {
+      const records = [...this.exceptions.values()]
+      this.send({
+        type: 'failures',
+        failures: records.filter((record) => record.failure.fatal || record.caughtBy === null).map((record) => record.failure),
+        caught: records.filter((record) => typeof record.caughtBy === 'string').length
+      })
+    }
     if (end) {
       this.ended = true
       this.send({
@@ -139,6 +174,41 @@ export class TraceTail {
         error: end.error ? { type: end.error.type, message: end.error.msg } : null
       })
     }
+  }
+
+  /** Follows one exception from where it was raised to where it was caught. Resolves to true if anything changed. */
+  private exception(event: TraceLine): boolean {
+    if (event.x === undefined) return false
+    if (event.e === 'raise') {
+      if (!event.fn) return false
+      this.exceptions.set(event.x, {
+        caughtBy: undefined,
+        failure: {
+          id: event.x,
+          type: event.type ?? 'Exception',
+          message: event.msg ?? '',
+          fn: event.fn,
+          line: event.line ?? 0,
+          origin: event.origin ?? null,
+          args: event.args ?? {},
+          locals: event.locals ?? {},
+          caller: event.from ? { fn: event.from, line: event.at ?? null, locals: event.caller_locals ?? {} } : null,
+          path: [event.fn],
+          fatal: false,
+          order: this.order++
+        }
+      })
+      return false // not a failure until we know nobody caught it
+    }
+    const record = this.exceptions.get(event.x)
+    if (!record) return false
+    if (event.e === 'unwind') {
+      const path = record.failure.path
+      if (event.fn && path[path.length - 1] !== event.fn) path.push(event.fn)
+      return false
+    }
+    record.caughtBy = event.fn ?? null
+    return true
   }
 
   /** Only the first time each branch runs matters for the tree; the tracer repeats calls it records in detail. */

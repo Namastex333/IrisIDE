@@ -121,6 +121,23 @@ export function reachableFrom(root: string, outgoing: Map<string, GraphEdge[]>):
   return reached
 }
 
+/** The shortest chain of nodes from the root to a node, root first, or null when the node cannot be reached. */
+export function pathTo(root: string, target: string, outgoing: Map<string, GraphEdge[]>): string[] | null {
+  const parent = new Map<string, string | null>([[root, null]])
+  const pending = [root]
+  for (let next = 0; next < pending.length && !parent.has(target); next++) {
+    for (const edge of outgoing.get(pending[next]) ?? []) {
+      if (parent.has(edge.target)) continue
+      parent.set(edge.target, pending[next])
+      pending.push(edge.target)
+    }
+  }
+  if (!parent.has(target)) return null
+  const path: string[] = []
+  for (let at: string | null = target; at !== null; at = parent.get(at) ?? null) path.unshift(at)
+  return path
+}
+
 /** Functions, methods and classes the entry point never gets to, however indirectly. */
 export function unreachedDefinitions(graph: ProjectGraph): GraphNode[] {
   if (!graph.root) return []

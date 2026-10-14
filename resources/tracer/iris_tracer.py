@@ -12,7 +12,8 @@ is observed with an audit hook. Everything is appended to TRACE.jsonl, one JSON 
     new      an object of a project class was created   cls, from, at   (classes with no constructor of their own)
     io       a file, database, host or environment      op, target, access, from, at, rel?
              variable was used
-    raise    an exception was raised                    x, fn, line, type, msg, i?, origin?, locals
+    raise    an exception was raised                    x, fn, line, type, msg, args, locals, i?, origin?,
+                                                        from?, at?, caller_locals?
     unwind   ...and left a function without being       fn, type, x?, i?
              caught there
     handled  ...and was caught                          x, fn?, line?
@@ -61,6 +62,7 @@ IGNORED_DIRS = frozenset(
     [".git", "__pycache__", ".venv", "venv", "env", "node_modules", ".pytest_cache", ".mypy_cache", ".idea", ".vscode", ".iris", "site-packages", "dist-packages"]
 )
 CONSTRUCTORS = ("__init__", "__new__", "__post_init__")
+NESTED_CODE = ("<lambda>", "<genexpr>", "<listcomp>", "<setcomp>", "<dictcomp>")  # runs on behalf of the function around it
 CODE_SUFFIXES = (".py", ".pyc", ".pyo", ".pyd", ".pyi", ".pyw", ".so", ".dll", ".pth")
 QUIET_EXCEPTIONS = (SystemExit, GeneratorExit)  # ways of stopping, not errors
 WATCHED_AUDITS = frozenset(["open", "sqlite3.connect", "socket.getaddrinfo", "http.client.connect"])
@@ -333,11 +335,11 @@ class Tracer(object):
                     shown[name] = describe(value)
         return shown
 
-    def local_values(self, frame):
+    def local_values(self, frame, skip=()):
         shown = {}
         try:
             for name, value in list(frame.f_locals.items()):
-                if name.startswith("__") or isinstance(value, (types.ModuleType, types.FunctionType, type)):
+                if name in skip or name.startswith(("__", ".")) or isinstance(value, (types.ModuleType, types.FunctionType, type)):
                     continue
                 shown[name] = describe(value)
                 if len(shown) >= 20:
@@ -453,23 +455,45 @@ class Tracer(object):
         if not recorded:
             return
         self.raises_left -= 1
+
+        # A lambda, comprehension or generator expression fails on behalf of the function it is written in.
+        owner, owner_info = frame, info
+        while owner.f_back is not None and owner.f_code.co_name in NESTED_CODE:
+            outer_info = self.info_for(owner.f_back.f_code)
+            if outer_info is None:
+                break
+            owner, owner_info = owner.f_back, outer_info
+
         event = {
             "e": "raise",
             "x": self.next_exception,
             "t": self.now(),
-            "fn": info.key,
+            "fn": owner_info.key,
             "line": frame.f_lineno,
             "type": type(error).__name__,
             "msg": message_of(error),
         }
-        call = self.open_calls.get(id(frame))
+        call = self.open_calls.get(id(owner))
         if call is not None:
             event["i"] = call
         if traceback_end is not None and traceback_end.tb_frame is not frame:
             # It started inside a library that this function called.
             origin = traceback_end.tb_frame.f_code
             event["origin"] = "%s:%s" % (os.path.basename(origin.co_filename), origin.co_name)
-        event["locals"] = self.local_values(frame)
+
+        # What was passed in, and everything else the function (and any lambda it failed in) was holding.
+        event["args"] = self.arguments(owner, owner.f_code)
+        values = self.local_values(owner, event["args"])
+        if owner is not frame:
+            values.update(self.local_values(frame))
+        event["locals"] = values
+
+        # Who called it, from which line, and what that caller was holding at the time.
+        caller, caller_frame = self.caller_of(owner.f_back, owner.f_code)
+        if caller is not None:
+            event["from"] = caller.key
+            event["at"] = caller_frame.f_lineno
+            event["caller_locals"] = self.local_values(caller_frame)
         self.writer.emit(event)
 
     def on_raise(self, code, offset, error):
@@ -679,7 +703,7 @@ class Tracer(object):
         monitoring.set_events(self.tool, events.PY_START | events.RAISE | events.RERAISE | events.EXCEPTION_HANDLED | events.PY_UNWIND)
         sys.addaudithook(self.on_audit)
         self.watch_environment()
-        self.writer.every_second = self.write_counts
+        self.writer.every_second = self.tick
         self.active = True
 
     def changed_counts(self):
@@ -698,6 +722,16 @@ class Tracer(object):
         changed = self.changed_counts()
         if changed:
             self.writer.emit({"e": "counts", "t": self.now(), "counts": changed})
+
+    def tick(self):
+        """About once a second, from the writer's background loop."""
+        self.write_counts()
+        # An exception caught over a second ago and not raised again since is not going anywhere. Writing that
+        # down now lets a long-running program (a server, say) report an error without waiting for the run to end.
+        now = self.now()
+        for thread, pending in list(self.pending.items()):
+            if pending[2] is not TRAVELLING and now - pending[2][2] > 1.0 and self.pending.get(thread) is pending:
+                self.settle(thread)
 
     def finish(self):
         """Runs at interpreter exit, after the program's threads and its own exit handlers are done."""

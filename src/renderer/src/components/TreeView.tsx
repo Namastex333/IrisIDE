@@ -17,19 +17,21 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphEdge, GraphEdgeKind, GraphNode, ProjectGraph } from '../../../shared/api'
-import { EDGE_COLORS, IDLE_EDGE_COLORS, type Theme } from '../theme'
+import { EDGE_COLORS, ERROR_EDGE_COLORS, IDLE_EDGE_COLORS, type Theme } from '../theme'
 import {
   connectedTo,
   layoutTree,
   NODE_HEIGHT,
   NODE_WIDTH,
   outgoingEdges,
+  pathTo,
   reachableFrom,
   unreachedDefinitions,
   visibleTree,
   type Direction
 } from '../tree/layout'
-import { nodesAlongRun, resolveTrace, runCoverage, type RunTrace } from '../tree/trace'
+import { nodesAlongRun, runCoverage, type RunTrace, type RunView } from '../tree/trace'
+import { EyeIcon } from './icons'
 import { RunBar } from './RunBar'
 
 interface Props {
@@ -40,10 +42,13 @@ interface Props {
   direction: Direction
   showInferred: boolean
   theme: Theme
-  /** The latest run, while it is on show. */
+  /** The latest run, while it is on show, and what it means for the tree. */
   trace: RunTrace | null
+  runView: RunView | null
   onOpen(file: string, line: number | null): void
   onClearTrace(): void
+  /** Opens the focus view on the error the run flagged. */
+  onFocusError(): void
 }
 
 type TreeNodeData = {
@@ -60,6 +65,10 @@ type TreeNodeData = {
   busy: boolean
   /** Run view: some of this node's hidden branches ran. */
   hiddenRan: boolean
+  /** Run view: the function that failed, or the one that called it. */
+  flag: 'failing' | 'calling' | null
+  /** Run view: the failing function is somewhere among this node's hidden branches. */
+  hiddenError: boolean
 }
 type TreeFlowNode = Node<TreeNodeData, 'tree'>
 
@@ -72,7 +81,12 @@ const LEGEND: [GraphEdgeKind, string][] = [
 
 const COUNTED = new Set(['function', 'method', 'class'])
 
-const TreeActions = createContext<{ toggle(id: string): void; open(node: GraphNode): void }>({ toggle() {}, open() {} })
+interface Actions {
+  toggle(id: string): void
+  open(node: GraphNode): void
+  focusError(): void
+}
+const TreeActions = createContext<Actions>({ toggle() {}, open() {}, focusError() {} })
 
 const baseName = (path: string): string => path.slice(path.lastIndexOf('/') + 1)
 
@@ -99,8 +113,9 @@ const TreeNode = memo(function TreeNode({ id, data }: NodeProps<TreeFlowNode>) {
   const actions = useContext(TreeActions)
   const { node } = data
   const text = subtitle(node, data.isRoot, data.calls, data.busy)
+  const flagClass = data.flag ? ` flag-${data.flag}` : ''
   return (
-    <div className={`tree-node kind-${node.kind}${data.isRoot ? ' root' : ''}${data.selected ? ' selected' : ''}`}>
+    <div className={`tree-node kind-${node.kind}${data.isRoot ? ' root' : ''}${data.selected ? ' selected' : ''}${flagClass}`}>
       <Handle type="target" position={data.horizontal ? Position.Left : Position.Top} isConnectable={false} />
       <div className="tree-node-text">
         <div className="tree-node-label" title={node.label}>
@@ -110,13 +125,28 @@ const TreeNode = memo(function TreeNode({ id, data }: NodeProps<TreeFlowNode>) {
           {text}
         </div>
       </div>
+      {data.flag && (
+        <button
+          className="tree-eye nodrag nopan"
+          title={data.flag === 'failing' ? 'It failed here. Focus on the error' : 'This called the function that failed. Focus on the error'}
+          onClick={(event) => {
+            event.stopPropagation()
+            actions.focusError()
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <EyeIcon />
+        </button>
+      )}
       {data.branches > 0 && (
         <button
-          className={`tree-toggle nodrag nopan${data.hiddenRan ? ' has-ran' : ''}`}
+          className={`tree-toggle nodrag nopan${data.hiddenError ? ' has-error' : data.hiddenRan ? ' has-ran' : ''}`}
           title={
             data.expanded
               ? 'Collapse'
-              : `Show ${data.branches} ${data.branches === 1 ? 'branch' : 'branches'}${data.hiddenRan ? ' (some of them ran)' : ''}`
+              : `Show ${data.branches} ${data.branches === 1 ? 'branch' : 'branches'}${
+                  data.hiddenError ? ' (the error is in there)' : data.hiddenRan ? ' (some of them ran)' : ''
+                }`
           }
           onClick={(event) => {
             event.stopPropagation()
@@ -142,6 +172,8 @@ const NODE_TYPES = { tree: TreeNode }
 
 /** Room left around the tree for the buttons (top), the legend (bottom) and the zoom controls (right). */
 const FIT_PADDING = { top: '70px', right: '70px', bottom: '60px', left: '40px' } as const
+/** The same, with room for the run bar under the buttons. */
+const FIT_PADDING_WITH_RUN_BAR = { ...FIT_PADDING, top: '112px' } as const
 
 function TreeCanvas({
   graph,
@@ -152,8 +184,10 @@ function TreeCanvas({
   showInferred,
   theme,
   trace,
+  runView,
   onOpen,
-  onClearTrace
+  onClearTrace,
+  onFocusError
 }: Props) {
   const root = graph?.root ?? null
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -168,12 +202,6 @@ function TreeCanvas({
     setSelected(null)
     setShowUnreached(false)
   }, [root])
-
-  // Run view. A run that could not be traced has nothing to show on the tree.
-  const runView = useMemo(
-    () => (graph && trace && (trace.traced === true || (trace.traced === null && trace.status === 'running')) ? resolveTrace(graph, trace) : null),
-    [graph, trace]
-  )
 
   const nodeById = useMemo(
     () => new Map([...(graph?.nodes ?? []), ...(runView?.extraNodes ?? [])].map((node) => [node.id, node])),
@@ -222,6 +250,23 @@ function TreeCanvas({
   const edgeLit = (edge: GraphEdge): boolean => (runView?.ran.get(edge.id) ?? Infinity) <= shownOrder
   const nodeLit = (id: string): boolean => id === root || (runView?.nodeOrder.get(id) ?? Infinity) <= shownOrder
 
+  // The error the run flagged: it shows once the lighting-up reaches it.
+  const failure = runView?.failure ?? null
+  const flagged = !!failure && shownOrder >= failure.error.order
+  const errorPath = useMemo(
+    () => (failure?.failing && root ? (pathTo(root, failure.failing, outgoing) ?? []) : []),
+    [failure, root, outgoing]
+  )
+  const errorAncestors = useMemo(() => new Set(errorPath.slice(0, -1)), [errorPath])
+
+  // When a run fails, open the tree just enough to show where.
+  const failureKey = failure ? `${traceId}:${failure.error.id}` : null
+  useEffect(() => {
+    if (!failureKey || errorPath.length < 2) return
+    setExpanded((current) => new Set([...current, ...errorPath.slice(0, -1)]))
+    // errorPath is read as it was when this failure first appeared; later changes must not reopen what the user closed.
+  }, [failureKey])
+
   // Focus mode: with a node selected, everything that neither leads to it nor follows from it fades out.
   const focus = useMemo(
     () => (selected && tree?.parent.has(selected) ? connectedTo(selected, tree.edges) : null),
@@ -244,6 +289,7 @@ function TreeCanvas({
         if (!node || !position) return []
         const lit = runView ? nodeLit(id) : false
         const classes = [focus && !focus.has(id) ? 'faded' : '', runView ? (lit ? 'ran' : 'idle') : ''].filter(Boolean).join(' ')
+        const flag = flagged ? (id === failure?.failing ? 'failing' : id === failure?.caller ? 'calling' : null) : null
         return [
           {
             id,
@@ -264,26 +310,30 @@ function TreeCanvas({
               horizontal,
               calls: lit ? (runView?.calls.get(id) ?? null) : null,
               busy: runView?.busy.has(id) ?? false,
-              hiddenRan: !!runView && !expanded.has(id) && (outgoing.get(id) ?? []).some(edgeLit)
+              hiddenRan: !!runView && !expanded.has(id) && (outgoing.get(id) ?? []).some(edgeLit),
+              flag,
+              hiddenError: flagged && !expanded.has(id) && errorAncestors.has(id)
             }
           }
         ]
       })
     })
     // edgeLit and nodeLit only read runView, root and shownOrder, which are listed.
-  }, [tree, positions, focus, nodeById, outgoing, expanded, selected, root, direction, runView, shownOrder, setNodes])
+  }, [tree, positions, focus, nodeById, outgoing, expanded, selected, root, direction, runView, shownOrder, flagged, failure, errorAncestors, setNodes])
 
   const edges = useMemo(
     () =>
       (tree?.edges ?? []).map((edge): Edge => {
         const lit = edgeLit(edge)
         const idle = !!runView && !lit
-        const color = idle ? IDLE_EDGE_COLORS[theme] : EDGE_COLORS[theme][edge.kind]
+        const broken = flagged && edge.id === failure?.edge
+        const color = broken ? ERROR_EDGE_COLORS[theme] : idle ? IDLE_EDGE_COLORS[theme] : EDGE_COLORS[theme][edge.kind]
         // A likely link that the run saw happen is drawn solid; one that only counts because both ends ran stays dashed.
         const dashed = edge.inferred && !(lit && !runView?.indirect.has(edge.id))
         const classes = [
           focus && !(focus.has(edge.source) && focus.has(edge.target)) ? 'faded' : '',
-          runView ? (lit ? 'ran' : 'idle') : ''
+          runView ? (lit ? 'ran' : 'idle') : '',
+          broken ? 'error-branch' : ''
         ].filter(Boolean)
         return {
           id: edge.id,
@@ -292,19 +342,22 @@ function TreeCanvas({
           selectable: false,
           focusable: false,
           className: classes.join(' ') || undefined,
-          style: { stroke: color, strokeWidth: lit ? 2.4 : 1.6, strokeDasharray: dashed ? '5 4' : undefined },
+          style: { stroke: color, strokeWidth: broken ? 3 : lit ? 2.4 : 1.6, strokeDasharray: dashed && !broken ? '5 4' : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 }
         }
       }),
     // edgeLit only reads runView and shownOrder, which are listed.
-    [tree, focus, theme, runView, shownOrder]
+    [tree, focus, theme, runView, shownOrder, flagged, failure]
   )
 
-  // Bring newly shown branches into view.
-  const shape = `${direction}|${tree?.order.join('|') ?? ''}`
+  // Bring newly shown branches into view, keeping clear of the run bar while it is there.
+  const showRunBar = !!trace && (trace.traced !== null || trace.status === 'running')
+  const shape = `${direction}|${showRunBar}|${tree?.order.join('|') ?? ''}`
   useEffect(() => {
-    const timer = window.setTimeout(() => void fitView({ padding: FIT_PADDING, duration: 300, maxZoom: 1 }), 60)
+    const padding = showRunBar ? FIT_PADDING_WITH_RUN_BAR : FIT_PADDING
+    const timer = window.setTimeout(() => void fitView({ padding, duration: 300, maxZoom: 1 }), 60)
     return () => window.clearTimeout(timer)
+    // showRunBar is part of shape.
   }, [shape, fitView])
 
   const actions = useMemo(
@@ -317,9 +370,10 @@ function TreeCanvas({
         }),
       open: (node: GraphNode) => {
         if (node.file) onOpen(node.file, node.line)
-      }
+      },
+      focusError: onFocusError
     }),
-    [onOpen]
+    [onOpen, onFocusError]
   )
 
   const expandAll = (): void => {
@@ -334,8 +388,6 @@ function TreeCanvas({
   } else if (!graph) message = analyzing ? 'Reading the project…' : null
   else if (!root) message = `${entryPoint} was not found in this project. Pick another entry point in the top bar.`
   else if (!outgoing.has(root)) message = `${entryPoint} does not call anything Iris can follow yet.`
-
-  const showRunBar = !!trace && (trace.traced !== null || trace.status === 'running')
 
   return (
     <TreeActions.Provider value={actions}>
@@ -385,8 +437,10 @@ function TreeCanvas({
               <RunBar
                 trace={trace}
                 coverage={coverage}
+                canFocus={!!failure}
                 onShowRan={() => runView && setExpanded(nodesAlongRun(root, outgoing, runView.ran))}
                 onReplay={() => setShownOrder(-1)}
+                onFocus={onFocusError}
                 onClear={onClearTrace}
               />
             )}
@@ -423,6 +477,12 @@ function TreeCanvas({
               <span>
                 <i style={{ background: IDLE_EDGE_COLORS[theme] }} />
                 did not run
+              </span>
+            )}
+            {flagged && (
+              <span>
+                <i style={{ background: ERROR_EDGE_COLORS[theme] }} />
+                where it failed
               </span>
             )}
           </Panel>

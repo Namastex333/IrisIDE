@@ -130,11 +130,13 @@ Built in phases so there's something usable early and each phase can be vibecode
 - [x] Add branches that only show up at run time (for example a callback called from somewhere unexpected)
 
 ### Phase 4: Error flagging and the focus eye
-- [ ] Turn the failing function red and its caller orange
-- [ ] Highlight the branch between them
-- [ ] Add the 👁 focus eye button on flagged nodes
-- [ ] Focus view: the two functions side by side
-- [ ] Show the error message and the input values at the moment of failure
+- [x] Turn the failing function red and its caller orange
+- [x] Highlight the branch between them
+- [x] Add the 👁 focus eye button on flagged nodes
+- [x] Focus view: the two functions side by side
+- [x] Show the error message and the input values at the moment of failure
+- [x] Open the tree just enough to show the error, and offer the focus view from the editor too
+- [x] Flag only errors your code did not catch; the ones it catches are counted, not flagged
 
 ### Phase 5: Version snapshots
 - [ ] Create a hidden git repo per project for snapshots
@@ -223,7 +225,12 @@ The installed app and `npm run dev` keep separate settings, so both can be open 
    - the bar above the tree says how the run went and how many branches ran
    - **Show what ran** opens exactly the branches that ran, **Replay** lights them up again in order, **✕** clears the run
    - a collapsed node with a green count has branches inside that ran
-7. **⚙** (or **Ctrl+,**) opens Settings: theme, tree direction, fonts, the Python interpreter, tracing on or off, and more. **Files** shows a plain list of every file.
+7. When a run fails, the function where it failed turns red, the function that called it turns orange, and the branch between them is highlighted. The tree opens just enough to show them.
+   - click 👁 on either one, **Focus** in the run bar, or **Focus on the error** above the editor
+   - the focus view shows the two functions side by side, with the failing line and the calling line highlighted, what was passed in, and the variables each one held at that moment
+   - **Open** jumps to that line in the editor; **← Tree** or **Esc** goes back
+   - errors your code catches itself are counted in the run bar but not flagged
+8. **⚙** (or **Ctrl+,**) opens Settings: theme, tree direction, fonts, the Python interpreter, tracing on or off, and more. **Files** shows a plain list of every file.
 
 ### How to read the tree
 
@@ -241,6 +248,8 @@ Before a run, the tree comes from reading the code, so it is a best effort. Code
 
 **Run** starts your script through a small tracer (`resources/tracer/iris_tracer.py`) that watches from the outside using Python's `sys.monitoring` and audit hooks. Nothing is added to your files, and the output in the Run tab is exactly what plain Python prints. The tracer records calls, arguments, return values and exceptions in your own code (not in libraries), plus the files, databases, hosts and environment variables your code touches.
 
+Values are recorded as short descriptions (about 160 characters at most, with big tables and arrays shown by their shape), so a trace never holds a copy of your data. The first 30 calls of each function are recorded with their arguments and return values, and the first 300 exceptions with the variables at that moment.
+
 Each run's trace is saved in a hidden `.iris/traces` folder inside the project (the last 10 are kept). That folder has its own `.gitignore`, so it never gets committed, and it is safe to delete. A function called hundreds of thousands of times stops being watched after 200,000 calls, so a busy loop does not slow the run down much.
 
 ### Project layout
@@ -255,11 +264,12 @@ Each run's trace is saved in a hidden `.iris/traces` folder inside the project (
 | `src/renderer/src/tree/layout.ts` | Decides which nodes are visible and where they sit |
 | `resources/tracer/iris_tracer.py` | The Python tracer that **Run** goes through (its header documents the trace format) |
 | `src/main/services/trace-tail.ts` | Reads the trace file while the program is still running |
-| `src/renderer/src/tree/trace.ts` | Matches what ran to the tree's nodes and branches |
+| `src/renderer/src/tree/trace.ts` | Matches what ran to the tree's nodes and branches, and picks the error to flag |
+| `src/renderer/src/components/FocusView.tsx` | The 👁 focus view |
 | `scripts/make-icon.mjs` | Draws the app icon into `resources/icon.png` (`npm run icon`) |
 
 ---
 
 ## Status
 
-🌿 Phases 0 to 3 are done: Iris installs, opens a project as a tree of what calls what, edits and saves files, has a terminal and a settings page, and runs Python through a tracer that lights up the branches that actually ran. Next up is Phase 4, error flagging and the focus eye. Expect a lot of iteration; that's the workflow this tool is designed for.
+🌿 Phases 0 to 4 are done: Iris installs, opens a project as a tree of what calls what, edits and saves files, has a terminal and a settings page, runs Python through a tracer that lights up the branches that actually ran, and when a run fails shows where, side by side with its caller and the values they held. Next up is Phase 5, version snapshots. Expect a lot of iteration; that's the workflow this tool is designed for.
