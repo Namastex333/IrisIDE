@@ -1,6 +1,6 @@
 # ==========================================
 # Iris .gitignore
-# Tauri + React + TypeScript + Python tracer
+# Electron + React + TypeScript + Python tracer
 # ==========================================
 
 # ---------- Secrets (never commit) ----------
@@ -16,6 +16,8 @@ node_modules/
 dist/
 dist-ssr/
 build/
+out/
+release/
 .vite/
 *.tsbuildinfo
 npm-debug.log*
@@ -51,6 +53,9 @@ htmlcov/
 *.trace
 *.trace.json
 traces/
+
+# Written by the sample project when it runs
+examples/hello/receipt.txt
 
 # ---------- Logs ----------
 logs/
