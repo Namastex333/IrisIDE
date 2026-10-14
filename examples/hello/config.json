@@ -1,0 +1,7 @@
+{
+  "tax_rate": 0.08,
+  "items": [
+    { "name": "notebook", "price": 4.5, "quantity": 3 },
+    { "name": "pen", "price": 1.25, "quantity": 10 }
+  ]
+}

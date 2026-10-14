@@ -1,0 +1,29 @@
+appId: com.namastex.iris
+productName: Iris
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+# node-pty loads a native binary and helper executables, which can't run from inside the asar archive.
+asarUnpack:
+  - node_modules/node-pty/**
+# The Python tracer has to be a real file for Python to run it, so it goes beside the archive, not inside.
+extraResources:
+  - from: resources/tracer
+    to: tracer
+    filter:
+      - "*.py"
+# node-pty ships prebuilt N-API binaries, so no compiler is needed.
+npmRebuild: false
+win:
+  target: nsis
+  icon: resources/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Iris
+  artifactName: Iris-Setup-${version}.${ext}

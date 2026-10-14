@@ -73,7 +73,7 @@ This isn't trying to replace VS Code. It's a personal tool shaped around how pro
 
 | Part | Tool |
 |---|---|
-| Desktop app | Tauri (Rust backend) + TypeScript + React. Electron is the fallback if Tauri gets in the way. |
+| Desktop app | Electron + TypeScript + React (v1). The UI only talks to the backend through one interface (`src/shared/api.ts`), so a lighter Tauri build stays possible as a v2. |
 | Code editor | Monaco (the editor inside VS Code) |
 | Terminal pane | xterm.js |
 | Tree / branching visual | React Flow |
@@ -91,38 +91,43 @@ This isn't trying to replace VS Code. It's a personal tool shaped around how pro
 Built in phases so there's something usable early and each phase can be vibecoded on its own.
 
 ### Phase 0: Setup
-- [ ] Create the Tauri + React + TypeScript project
-- [ ] Confirm it builds and opens a blank window
-- [ ] Set up the repo, `.gitignore`, and this README
-- [ ] Get an Anthropic API key and store it safely (env var or OS keychain, never committed)
+- [x] Create the Electron + React + TypeScript project
+- [x] Confirm it builds and opens a window
+- [x] Set up the repo, `.gitignore`, and this README
+- [x] Package it as an installable app with a Desktop shortcut
+- [ ] Get an Anthropic API key and store it safely (env var or OS keychain, never committed). Not needed until Phase 6.
 
 ### Phase 1: Basic shell
-- [ ] Open a project folder
-- [ ] Monaco editor pane that opens and saves a file
-- [ ] Python syntax highlighting
-- [ ] Terminal pane with xterm.js
-- [ ] **Run** button that runs the project's entry point and shows output
-- [ ] Simple temporary file list (replaced by the tree in Phase 2)
+- [x] Open a project folder
+- [x] Monaco editor pane that opens and saves a file
+- [x] Python syntax highlighting
+- [x] Terminal pane with xterm.js
+- [x] **Run** button that runs the project's entry point and shows output
+- [x] Simple temporary file list (replaced by the tree in Phase 2)
 
 ### Phase 2: Structure view (the tree)
-- [ ] Parse Python files with tree-sitter to find imports and function calls
-- [ ] Build a call graph (files → functions → calls)
-- [ ] Draw the graph with React Flow
-- [ ] Color-code edges by type (config load, function call, data read/write)
-- [ ] Pick an entry point and show only its first-level branches
-- [ ] Expand and collapse branches
-- [ ] Click a node to open the file in Monaco
-- [ ] Closing the editor returns to the tree view
-- [ ] Focus mode: fade out everything not connected to the selected node
-- [ ] Make the tree the default home screen and remove the file list
+- [x] Parse Python files with tree-sitter to find imports and function calls
+- [x] Build a call graph (files → functions → calls)
+- [x] Draw the graph with React Flow
+- [x] Color-code edges by type (config load, function call, data read/write)
+- [x] Pick an entry point and show only its first-level branches
+- [x] Expand and collapse branches
+- [x] Open a node's file in Monaco, at the function (double-click, or select it and press **Open**; a single click is focus mode)
+- [x] Closing the editor returns to the tree view
+- [x] Focus mode: fade out everything not connected to the selected node
+- [x] Make the tree the default home screen (the file list is now an optional sidebar, off by default, so files the tree does not reach can still be opened)
+- [x] List functions and classes the entry point never reaches
+- [x] Create a new file from the top bar
 
 ### Phase 3: Tracer and run view
-- [ ] Write the Python tracer using `sys.monitoring`
-- [ ] Record calls, returns, arguments, and exceptions to a trace file
-- [ ] Run the project through the tracer when **Run** is pressed
-- [ ] Light up executed branches on the tree, in order
-- [ ] Show branches that exist but were never reached
-- [ ] Keep project files free of any logging code
+- [x] Write the Python tracer using `sys.monitoring`
+- [x] Record calls, returns, arguments, and exceptions to a trace file
+- [x] Run the project through the tracer when **Run** is pressed
+- [x] Light up executed branches on the tree, in order
+- [x] Show branches that exist but were never reached
+- [x] Keep project files free of any logging code
+- [x] Light up config and data branches too, by watching file, database, network and environment access (Python audit hooks)
+- [x] Add branches that only show up at run time (for example a callback called from somewhere unexpected)
 
 ### Phase 4: Error flagging and the focus eye
 - [ ] Turn the failing function red and its caller orange
@@ -164,32 +169,97 @@ Built in phases so there's something usable early and each phase can be vibecode
 ### Phase 8: Polish
 - [ ] Remember the last open project and tree layout
 - [ ] Keyboard shortcuts for the most common actions
-- [ ] Light and dark themes
-- [ ] Settings page (entry point, Python path, API key)
+- [x] Light and dark themes
+- [ ] Colors: lighten the dark theme a little, and replace the purple and blue accents with a complementary orange
+- [x] Settings page (theme, tree options, editor and terminal fonts, Python path, entry point)
+- [ ] API key in Settings (comes with Phase 6)
 - [ ] Use Iris to build Iris 🙂
 
 ---
 
 ## Getting started
 
-_To be filled in once Phase 1 is done._
+Requirements:
+- Node.js 22.12 or newer
+- Python 3.12+ on your PATH (used by **Run** and the tracer; older versions run, but untraced)
+- An Anthropic API key (only from Phase 6 onward)
 
 ```bash
-# install dependencies
+# install dependencies (once)
 npm install
+npx install-electron
 
-# run in development
-npm run tauri dev
+# run in development, with live reload
+npm run dev
+
+# check types
+npm run typecheck
 ```
 
-Requirements (planned):
-- Node.js
-- Rust (for Tauri)
-- Python 3.12+ (for the tracer)
-- An Anthropic API key
+### Build the desktop app
+
+```bash
+npm run dist
+```
+
+This creates `release/Iris-Setup-<version>.exe` (close Iris first if it is open). Run it to install Iris for your user account (no admin needed) and put an **Iris** shortcut on the Desktop and in the Start menu. After changing the code, run `npm run dist` and the installer again to update the installed app. To remove it, use Windows Settings → Apps → Iris.
+
+The installed app and `npm run dev` keep separate settings, so both can be open at once.
+
+### Using it
+
+1. **Open Folder** and pick a Python project (`examples/hello` is a tiny one to try). In an empty folder, **New File** creates your first file.
+2. The tree starts at the **entry point**, the file you run. It is `main.py` if the project has one; pick a different file with the **Entry** dropdown in the top bar.
+3. In the tree:
+   - the round button on a node shows how many branches it has; click it to expand or collapse
+   - **click** a node for focus mode (everything unconnected fades); click the background to clear it
+   - **double-click** a node, or select it and press **Open**, to edit its file at that function
+   - **← Tree** closes the editor and returns to the tree exactly as you left it
+   - **N not reached** lists functions and classes the entry point never gets to
+4. **Ctrl+S** saves; a dot on the tab means unsaved changes. The tree updates after each save.
+5. **Run** runs the entry point and shows its output in the Run tab. The Terminal tab is a PowerShell session in the project folder.
+6. While it runs, the tree lights up the branches that run, in the order they first run. Afterwards:
+   - lit branches ran; dim ones did not, and nodes say how many times they ran
+   - the bar above the tree says how the run went and how many branches ran
+   - **Show what ran** opens exactly the branches that ran, **Replay** lights them up again in order, **✕** clears the run
+   - a collapsed node with a green count has branches inside that ran
+7. **⚙** (or **Ctrl+,**) opens Settings: theme, tree direction, fonts, the Python interpreter, tracing on or off, and more. **Files** shows a plain list of every file.
+
+### How to read the tree
+
+| Branch | Meaning |
+|---|---|
+| 🟢 green | calls a function, method or class |
+| 🔵 blue | loads config: reads a `.json` / `.yaml` / `.toml` / `.ini` / `.env` file, or environment variables |
+| 🟠 orange | reads or writes data: other files, databases, web requests |
+| ⚪ gray | imports a module whose top-level code does something |
+| dashed | a likely link Iris cannot be sure of: a callback passed as an argument, a framework decorator such as `@app.route`, or a method matched by name |
+
+Before a run, the tree comes from reading the code, so it is a best effort. Code that picks what to call at run time (for example `getattr`, or functions stored in dictionaries) only shows up once it has run. After a run, lit branches are facts: the tracer saw them happen.
+
+### How tracing works
+
+**Run** starts your script through a small tracer (`resources/tracer/iris_tracer.py`) that watches from the outside using Python's `sys.monitoring` and audit hooks. Nothing is added to your files, and the output in the Run tab is exactly what plain Python prints. The tracer records calls, arguments, return values and exceptions in your own code (not in libraries), plus the files, databases, hosts and environment variables your code touches.
+
+Each run's trace is saved in a hidden `.iris/traces` folder inside the project (the last 10 are kept). That folder has its own `.gitignore`, so it never gets committed, and it is safe to delete. A function called hundreds of thousands of times stops being watched after 200,000 calls, so a busy loop does not slow the run down much.
+
+### Project layout
+
+| Path | What lives there |
+|---|---|
+| `src/shared/api.ts` | The one interface between the UI and the backend |
+| `src/main/` | Backend (Electron main process): files, terminal, running Python, settings |
+| `src/main/services/analyzer/` | Reads the Python code with tree-sitter and builds the graph behind the tree |
+| `src/preload/` | Exposes the interface to the UI as `window.iris` |
+| `src/renderer/` | The UI (React, Monaco, xterm.js, React Flow) |
+| `src/renderer/src/tree/layout.ts` | Decides which nodes are visible and where they sit |
+| `resources/tracer/iris_tracer.py` | The Python tracer that **Run** goes through (its header documents the trace format) |
+| `src/main/services/trace-tail.ts` | Reads the trace file while the program is still running |
+| `src/renderer/src/tree/trace.ts` | Matches what ran to the tree's nodes and branches |
+| `scripts/make-icon.mjs` | Draws the app icon into `resources/icon.png` (`npm run icon`) |
 
 ---
 
 ## Status
 
-🌱 Early planning. Expect a lot of iteration; that's the workflow this tool is designed for.
+🌿 Phases 0 to 3 are done: Iris installs, opens a project as a tree of what calls what, edits and saves files, has a terminal and a settings page, and runs Python through a tracer that lights up the branches that actually ran. Next up is Phase 4, error flagging and the focus eye. Expect a lot of iteration; that's the workflow this tool is designed for.
